@@ -1,0 +1,15 @@
+# Binaries
+/cronmesh
+/bin/
+
+# Env
+.env
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Test / coverage
+coverage.out

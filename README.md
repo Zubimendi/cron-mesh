@@ -25,31 +25,66 @@ valid mechanisms fits a given deployment shape."
 The second, less obvious lesson this project is built to teach: **leader
 election alone does not mean exactly-once execution.** A leader can
 crash between deciding to trigger a job and durably recording that it
-did. `docs/ARCHITECTURE.md` §3 walks through exactly why, and what
-closes the gap (idempotent triggering via QueueLine, Project 1 — not a
-second implementation of "exactly-once," which isn't actually achievable
-by leader election alone in any real distributed system).
+did. [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) §3 walks through
+exactly why, and what closes the gap (idempotent triggering via
+QueueLine, Project 1 — not a second implementation of "exactly-once,"
+which isn't actually achievable by leader election alone in any real
+distributed system).
 
 ## What's here
 
-Documentation-first, like AuthNexus, PyDataRex, and VoteGuard before it:
-- `docs/ARCHITECTURE.md` — the design, in full depth, including the
-  explicit contrast with PyDataRex's approach.
-- `docs/STORY.md` — narrative for LinkedIn/Medium and interview talking
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — design in full depth,
+  including the explicit contrast with PyDataRex.
+- [`docs/STORY.md`](docs/STORY.md) — LinkedIn blurb + interview talking
   points.
-- `docs/CURSOR_CONTEXT.md` — the build plan, with infra/boilerplate setup
-  intentionally left to you.
+- [`docs/MEDIUM.md`](docs/MEDIUM.md) — Medium-ready article with diagram
+  assets in [`docs/images/`](docs/images/).
+- `cmd/cronmesh` — HTTP job API + advisory-lock leader + tick loop.
+- QueueLine (Project 1) — actual job execution; CronMesh only decides
+  *when* to trigger.
 
 ## Stack
 
-Go, PostgreSQL, Docker. Depends on **QueueLine** (Project 1) for actual
-job execution — CronMesh's own job is deciding *when* to trigger, not
-running arbitrary code.
+Go 1.22, PostgreSQL 16, Docker Compose. Depends on **QueueLine** over
+HTTP for enqueue (`dedupKey` = `{job_id}:{scheduled_time}`).
+
+## Quick start
+
+```bash
+# Postgres + schema
+make up
+
+# Run a replica (point QUEUELINE_BASE_URL at a running QueueLine)
+make run
+
+# Create a job
+curl -s -X POST http://localhost:8080/v1/jobs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "hourly-report",
+    "cronExpr": "0 * * * *",
+    "queueName": "default",
+    "payload": {"type": "report"},
+    "misfireGracePeriodSeconds": 300
+  }'
+
+# Who is leader?
+curl -s http://localhost:8080/v1/status
+```
+
+Run a second replica on another port (`HTTP_PORT=8081 make run`) against
+the same database — only one becomes leader; killing the leader's
+process releases the advisory lock and the standby takes over.
+
+```bash
+make test              # unit tests (misfire, dedup, QueueLine client)
+make test-integration  # advisory-lock exclusivity + failover (needs make up)
+```
 
 ## Status
 
-Architecture and planning complete. Implementation not started, by
-design — see `docs/CURSOR_CONTEXT.md`.
+MVP implemented: session-level advisory-lock leader election, misfire
+grace handling, QueueLine idempotent triggers, job CRUD API.
 
 ## License
 
